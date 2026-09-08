@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Pullio release builds
+release/
+
+# Local Pullio data
+pullio_history.json
+pullio_settings.json
+
+# Local binaries / dependencies
+yt-dlp.exe
+ffmpeg.exe
+ffprobe.exe
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
