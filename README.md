@@ -1,85 +1,128 @@
-# Pullio
+<p align="center">
+  <img src="assets/pullio-512.png" alt="Pullio" width="180">
+</p>
 
-**Pullio** is a lightweight Windows GUI for downloading video and audio using
-yt-dlp + FFmpeg.
+<h1 align="center">Pullio</h1>
 
-## Features
+<p align="center">
+  A lightweight Windows app for downloading video and audio, powered by yt-dlp and FFmpeg.
+</p>
 
-- Video downloads: MAX / 4K / 1440p / 1080p / 720p
-- MP4 / MKV output
-- CapCut-compatible MP4 mode
-- MP3 extraction: Best / 320 / 256 / 192 / 128 kbps
-- Automatic video info + thumbnail
-- Download progress, speed and ETA
-- Duplicate detection with clean `(1)`, `(2)`, `(3)` filenames
-- Download history
-- yt-dlp updater with confirmation
-- Dark modern interface
+<p align="center">
+  <strong>Windows 10 / 11</strong> · Video · MP3 · CapCut-friendly MP4
+</p>
 
-## Development
+<p align="center">
+  <img src="assets/pullio-app.png" alt="Pullio interface" width="820">
+</p>
 
-1. Put your local dependencies in the project root:
-   - `yt-dlp.exe`
-   - `ffmpeg.exe`
-   - `ffprobe.exe` (recommended)
+Download
 
-2. Install Python dependencies:
+The easiest way to use Pullio is to download the latest Windows release:
 
-   `install_dev.bat`
+Download Pullio for Windows
 
-3. Run:
+Download Pullio-1.0.0-win64.zip.
 
-   `run_dev.bat`
+Extract the ZIP to any folder.
 
-## Build Windows release
+Run Pullio.exe.
 
-Run:
+Paste a YouTube URL and choose Video or Audio.
 
-`build_release.bat`
+Pullio is portable. No Python installation is required for the Windows release.
 
-It creates:
+Features
 
-- `dist\Pullio.exe`
-- `release\Pullio-1.0.0-win64\`
+Video downloads in MAX / 4K / 1440p / 1080p / 720p
 
-The build script does **not** overwrite your existing yt-dlp or FFmpeg files.
+MP4 and MKV output
 
-## Icon
+CapCut-compatible MP4 mode
 
-The Pullio brand assets are included:
+MP3 extraction in Best / 320 / 256 / 192 / 128 kbps
 
-- `assets\pullio.ico` - multi-size Windows icon used by `Pullio.exe`
-- `assets\pullio-512.png` - square PNG for GitHub/release pages
-- `assets\pullio-brand.png` - original high-resolution brand artwork
+Automatic video title, channel, source info and thumbnail
 
-`build_release.bat` automatically embeds `assets\pullio.ico` into the EXE.
+Download progress, speed and ETA
 
-## Support link
+Duplicate detection with clean (1), (2), (3) filenames
 
-Before publishing, edit these constants in `src\pullio.py`:
+Download history
 
-```python
-PROJECT_URL = ""
-SUPPORT_URL = ""
-```
+Built-in yt-dlp updater with confirmation
 
-Use a GitHub repository URL and a GitHub Sponsors / Ko-fi page. Do not put card
-numbers or payment secrets in the source code.
+Modern dark interface
 
-## Legal / responsible use
+Portable Windows release
 
-Pullio is a general-purpose media download interface. It does not give users
-permission to download, redistribute, or reuse copyrighted material.
+How it works
 
-Use Pullio only for content you have the right or permission to download.
+Pullio provides a simple graphical interface around:
 
-See `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+yt-dlp for media downloading
 
+FFmpeg for merging, conversion and audio extraction
 
-## Release privacy
+Pullio does not hide or replace these projects. They are the engines that power the download process.
 
-`pullio_settings.json` and `pullio_history.json` are local runtime files.
-They are intentionally excluded from the public release package.
+For developers
 
-`build_release.bat` cleans the previous release folder before packaging and
-verifies that these personal JSON files are not present before creating the ZIP.
+Requirements
+
+Python 3
+
+yt-dlp.exe
+
+ffmpeg.exe
+
+ffprobe.exe
+
+Install Python dependencies:
+
+install_dev.bat
+
+Run the development version:
+
+run_dev.bat
+
+Build a Windows release:
+
+build_release.bat
+
+The release script creates:
+
+release/
+└── Pullio-1.0.0-win64/
+    ├── Pullio.exe
+    ├── yt-dlp.exe
+    ├── ffmpeg.exe
+    ├── ffprobe.exe
+    ├── LICENSE.txt
+    └── THIRD_PARTY_NOTICES.md
+
+Support
+
+Pullio is free to use.
+
+If you find it useful, you can support development through the Support button inside the app once the support page is configured.
+
+Legal / responsible use
+
+Pullio is a general-purpose media download interface.
+
+It does not give users permission to download, redistribute or reuse copyrighted material. Use Pullio only for content you have the right or permission to download.
+
+License
+
+Pullio's own source code is released under the MIT License.
+
+Third-party components have their own licenses. See:
+
+LICENSE
+
+THIRD_PARTY_NOTICES.md
+
+<p align="center">
+  Made with Python, CustomTkinter, yt-dlp and FFmpeg.
+</p>
