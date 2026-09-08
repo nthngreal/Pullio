@@ -1,128 +1,186 @@
-<p align="center">
-  <img src="assets/pullio-512.png" alt="Pullio" width="180">
-</p>
+<div align="center">
 
-<h1 align="center">Pullio</h1>
+<img src="assets/pullio-512.png" width="120" alt="Pullio logo">
 
-<p align="center">
-  A lightweight Windows app for downloading video and audio, powered by yt-dlp and FFmpeg.
-</p>
+# Pullio
 
-<p align="center">
-  <strong>Windows 10 / 11</strong> · Video · MP3 · CapCut-friendly MP4
-</p>
+### Video & Audio Downloader
 
-<p align="center">
-  <img src="assets/pullio-app.png" alt="Pullio interface" width="820">
-</p>
+A lightweight Windows app for downloading video and audio, powered by **yt-dlp** and **FFmpeg**.
 
-Download
+**Windows 10 / 11 · Video · MP3 · CapCut-friendly MP4**
 
-The easiest way to use Pullio is to download the latest Windows release:
+<br>
 
-Download Pullio for Windows
+<img src="assets/pullio-app.png" width="850" alt="Pullio interface">
 
-Download Pullio-1.0.0-win64.zip.
+</div>
 
-Extract the ZIP to any folder.
+---
 
-Run Pullio.exe.
+## 📥 Download Pullio
 
-Paste a YouTube URL and choose Video or Audio.
+### Windows 10 / 11
 
-Pullio is portable. No Python installation is required for the Windows release.
+➡️ **[Download the latest version](https://github.com/nthngreal/Pullio/releases/latest)**
 
-Features
+Pullio is portable. **No installation or Python required.**
 
-Video downloads in MAX / 4K / 1440p / 1080p / 720p
+### 🚀 Getting started
 
-MP4 and MKV output
+1. Download `Pullio-1.0.0-win64.zip`
+2. Extract the ZIP file
+3. Open the extracted `Pullio-1.0.0-win64` folder
+4. Run **`Pullio.exe`**
+5. Paste a YouTube URL
+6. Choose **Video** or **Audio**
+7. Click **Download**
 
-CapCut-compatible MP4 mode
+> 💡 Everything needed to run Pullio is included in the release package.
 
-MP3 extraction in Best / 320 / 256 / 192 / 128 kbps
+---
 
-Automatic video title, channel, source info and thumbnail
+## ✨ Features
 
-Download progress, speed and ETA
+| Feature | Support |
+|---|---|
+| 🎬 Video quality | MAX, 4K, 1440p, 1080p, 720p |
+| 📦 Video formats | MP4, MKV |
+| 🎵 Audio | MP3 - Best, 320, 256, 192, 128 kbps |
+| ✂️ CapCut | CapCut-compatible MP4 mode |
+| 🖼️ Video info | Title, channel, source info and thumbnail |
+| 📊 Download status | Progress, speed and ETA |
+| 📁 Duplicate files | Automatic `(1)`, `(2)`, `(3)` naming |
+| 🕘 History | Download history |
+| 🔄 yt-dlp | Built-in updater |
+| 🌙 Interface | Modern dark UI |
+| 💻 Windows | Portable release, no installation required |
 
-Duplicate detection with clean (1), (2), (3) filenames
+---
 
-Download history
+## 🖥️ How to use
 
-Built-in yt-dlp updater with confirmation
+### 1. Paste a YouTube URL
 
-Modern dark interface
+Paste the link into the **YouTube URL** field.
 
-Portable Windows release
+Pullio automatically loads the video's title, channel, thumbnail and source information.
 
-How it works
+### 2. Choose Video or Audio
 
-Pullio provides a simple graphical interface around:
+For **Video**, choose the desired quality and container.
 
-yt-dlp for media downloading
+For **Audio**, choose the desired MP3 quality.
 
-FFmpeg for merging, conversion and audio extraction
+### 3. Choose where to save
+
+Use **Browse** to select your destination folder.
+
+### 4. Download
+
+Click **Download**.
+
+Pullio will display the progress, download speed and estimated time remaining.
+
+---
+
+## ⚙️ How Pullio works
+
+Pullio provides a graphical interface around:
+
+- **yt-dlp** for media downloading
+- **FFmpeg** for merging, conversion and audio extraction
+- **FFprobe** for media information
 
 Pullio does not hide or replace these projects. They are the engines that power the download process.
 
-For developers
+---
 
-Requirements
+## 🛠️ For developers
 
-Python 3
+Pullio is built with **Python + CustomTkinter** and uses **yt-dlp + FFmpeg**.
 
-yt-dlp.exe
+<details>
+<summary><b>Development setup</b></summary>
 
-ffmpeg.exe
+### Requirements
 
-ffprobe.exe
+- Python 3
+- yt-dlp
+- FFmpeg
+- FFprobe
 
-Install Python dependencies:
+### Install Python dependencies
 
+Run:
+
+```bat
 install_dev.bat
+```
 
-Run the development version:
+### Run Pullio
 
+Run:
+
+```bat
 run_dev.bat
+```
 
-Build a Windows release:
+### Build the Windows release
 
+Run:
+
+```bat
 build_release.bat
+```
 
-The release script creates:
+The build script creates the portable Windows release in:
 
-release/
-└── Pullio-1.0.0-win64/
-    ├── Pullio.exe
-    ├── yt-dlp.exe
-    ├── ffmpeg.exe
-    ├── ffprobe.exe
-    ├── LICENSE.txt
-    └── THIRD_PARTY_NOTICES.md
+```text
+release/Pullio-1.0.0-win64/
+```
 
-Support
+</details>
+
+---
+
+## ❤️ Support
 
 Pullio is free to use.
 
-If you find it useful, you can support development through the Support button inside the app once the support page is configured.
+If you find Pullio useful, you can support its development through the **Support** button inside the app once the support page is configured.
 
-Legal / responsible use
+---
+
+## ⚖️ Legal / Responsible use
 
 Pullio is a general-purpose media download interface.
 
-It does not give users permission to download, redistribute or reuse copyrighted material. Use Pullio only for content you have the right or permission to download.
+It does not give users permission to download, redistribute or reuse copyrighted material.
 
-License
+Use Pullio only for content you have the right or permission to download.
 
-Pullio's own source code is released under the MIT License.
+Users are responsible for complying with applicable laws and the terms of service of the platforms they use.
 
-Third-party components have their own licenses. See:
+---
 
-LICENSE
+## 📄 License
 
-THIRD_PARTY_NOTICES.md
+Pullio's own source code is released under the **MIT License**.
 
-<p align="center">
-  Made with Python, CustomTkinter, yt-dlp and FFmpeg.
-</p>
+Third-party components have their own licenses and terms.
+
+See:
+
+- [LICENSE](LICENSE)
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
+---
+
+<div align="center">
+
+Made with Python, CustomTkinter, yt-dlp and FFmpeg.
+
+**Pullio v1.0.0**
+
+</div>
