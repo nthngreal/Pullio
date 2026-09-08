@@ -12,7 +12,9 @@ A lightweight Windows app for downloading video and audio, powered by **yt-dlp**
 
 <br>
 
-<img src="assets/pullio-app.png" width="850" alt="Pullio interface">
+## Demo
+
+![Pullio demo](assets/pullio-demo.gif)
 
 </div>
 
