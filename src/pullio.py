@@ -7,7 +7,6 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-import webbrowser
 from io import BytesIO
 from pathlib import Path
 
@@ -15,15 +14,25 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
 APP_NAME = "Pullio"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.2"
 HISTORY_LIMIT = 50
-
-# Public release links. Set these before publishing.
-PROJECT_URL = ""
-SUPPORT_URL = ""
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+# Pullio v1.1 UI palette
+BG = "#121214"
+SURFACE = "#1A1A1E"
+SURFACE_2 = "#232328"
+HOVER = "#2A2A30"
+TEXT = "#F2F2F4"
+TEXT_SECONDARY = "#9A9AA3"
+TEXT_MUTED = "#686870"
+ACCENT = "#2F8CFF"
+ACCENT_HOVER = "#2376D8"
+SUCCESS = "#22C55E"
+DANGER = "#EF4444"
+RADIUS = 8
 
 def app_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -65,6 +74,16 @@ def looks_like_youtube_url(value: str) -> bool:
     except Exception:
         return False
 
+
+def has_playlist_param(value: str) -> bool:
+    """Return True when a YouTube URL contains a playlist/list parameter."""
+    try:
+        u = urllib.parse.urlparse(value.strip())
+        q = urllib.parse.parse_qs(u.query)
+        return bool(q.get("list"))
+    except Exception:
+        return False
+
 def fmt_res(data):
     w, h, fps = data.get("width"), data.get("height"), data.get("fps")
     bits = []
@@ -99,6 +118,57 @@ def apply_window_icon(window):
         except Exception:
             pass
 
+
+class ToolTip:
+    """Tiny hover tooltip for compact secondary explanations."""
+    def __init__(self, widget, text, delay=450):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self.job = None
+        self.tip = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _schedule(self, _event=None):
+        self._cancel()
+        self.job = self.widget.after(self.delay, self._show)
+
+    def _cancel(self):
+        if self.job:
+            try:
+                self.widget.after_cancel(self.job)
+            except Exception:
+                pass
+            self.job = None
+
+    def _show(self):
+        self.job = None
+        if self.tip and self.tip.winfo_exists():
+            return
+        self.tip = ctk.CTkToplevel(self.widget)
+        self.tip.overrideredirect(True)
+        self.tip.attributes("-topmost", True)
+        x = self.widget.winfo_rootx()
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
+        self.tip.geometry(f"+{x}+{y}")
+        frame = ctk.CTkFrame(self.tip, fg_color="#232328", corner_radius=8)
+        frame.pack()
+        ctk.CTkLabel(
+            frame,
+            text=self.text,
+            text_color="#F2F2F4",
+            justify="left",
+            font=ctk.CTkFont(size=11),
+        ).pack(padx=10, pady=7)
+
+    def _hide(self, _event=None):
+        self._cancel()
+        if self.tip and self.tip.winfo_exists():
+            self.tip.destroy()
+        self.tip = None
+
+
 class DownloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -126,6 +196,11 @@ class DownloaderApp(ctk.CTk):
         self.fetch_generation = 0
         self.auto_fetch_job = None
         self.details_open = False
+        self.more_menu = None
+        self.updating_ytdlp = False
+        self.duplicate_modal = None
+        self.modal_backdrop = None
+        self.last_clipboard_url = ""
 
         settings = self.load_settings()
 
@@ -136,285 +211,350 @@ class DownloaderApp(ctk.CTk):
         self.capcut_var = ctk.BooleanVar(value=settings.get("capcut", False))
         self.audio_quality_var = ctk.StringVar(value=settings.get("audio_quality", "Best"))
         self.output_var = ctk.StringVar(value=settings.get("folder", str(DEFAULT_DOWNLOADS)))
+        self.folder_name_var = ctk.StringVar(value=Path(self.output_var.get()).name or self.output_var.get())
 
         self.build_ui()
         self.apply_mode()
         self.check_dependencies()
 
         self.url_var.trace_add("write", self.on_url_changed)
+        self.after(350, self.check_clipboard_on_start)
+        self.bind("<FocusIn>", self._on_app_focus, add="+")
         self.after(100, self.process_queue)
         self.after_idle(self.fit_window_to_screen)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def build_ui(self):
+        self.configure(fg_color=BG)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         root = ctk.CTkFrame(self, fg_color="transparent")
-        root.grid(row=0, column=0, sticky="nsew", padx=18, pady=14)
+        root.grid(row=0, column=0, sticky="nsew", padx=22, pady=18)
         root.grid_columnconfigure(0, weight=1)
 
-        # Header
+        # Header — quiet branding, utilities behind one compact menu.
         header = ctk.CTkFrame(root, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         header.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            header, text="Pullio",
-            font=ctk.CTkFont(size=25, weight="bold")
+            header, text="Pullio", text_color=TEXT,
+            font=ctk.CTkFont(size=27, weight="bold")
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(
-            header, text="Video & Audio Downloader",
-            text_color=("gray45", "gray65")
-        ).grid(row=1, column=0, sticky="w", pady=(0, 0))
+            header, text="Video & Audio Downloader", text_color=TEXT_SECONDARY
+        ).grid(row=1, column=0, sticky="w", pady=(1, 0))
 
-        header_actions = ctk.CTkFrame(header, fg_color="transparent")
-        header_actions.grid(row=0, column=1, rowspan=2, sticky="e")
-
-        self.support_btn = ctk.CTkButton(
-            header_actions, text="♡ Support", width=92, height=30,
-            fg_color="transparent", border_width=1,
-            command=self.open_support
+        self.more_btn = ctk.CTkButton(
+            header, text="⋯", width=38, height=34, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT,
+            font=ctk.CTkFont(size=20, weight="bold"),
+            command=self.show_more_menu
         )
-        self.support_btn.pack(side="left", padx=(0, 6))
+        self.more_btn.grid(row=0, column=1, rowspan=2, sticky="e")
 
-        self.about_btn = ctk.CTkButton(
-            header_actions, text="About", width=72, height=30,
-            fg_color="transparent", border_width=1,
-            command=self.show_about
-        )
-        self.about_btn.pack(side="left", padx=(0, 6))
-
-        self.update_btn = ctk.CTkButton(
-            header_actions, text="Update yt-dlp", width=122, height=30,
-            fg_color="transparent", border_width=1,
-            command=self.confirm_update_ytdlp
-        )
-        self.update_btn.pack(side="left")
-
-        # URL card
-        url_card = self.card(root, 1)
-        url_card.grid_columnconfigure(0, weight=1)
+        # URL input — one visual object, Paste lives inside the field shell.
+        url_block = ctk.CTkFrame(root, fg_color="transparent")
+        url_block.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        url_block.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            url_card, text="YouTube URL",
-            font=ctk.CTkFont(weight="bold")
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=14, pady=(11, 6))
+            url_block, text="YouTube URL", text_color=TEXT_SECONDARY,
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        input_shell = ctk.CTkFrame(url_block, fg_color=SURFACE_2, corner_radius=RADIUS)
+        input_shell.grid(row=1, column=0, sticky="ew")
+        input_shell.grid_columnconfigure(0, weight=1)
 
         self.url_entry = ctk.CTkEntry(
-            url_card, textvariable=self.url_var,
-            placeholder_text="https://www.youtube.com/watch?v=..."
+            input_shell, textvariable=self.url_var,
+            placeholder_text="Paste a YouTube link…",
+            height=42, border_width=0, corner_radius=RADIUS,
+            fg_color="transparent", text_color=TEXT, placeholder_text_color=TEXT_MUTED
         )
-        self.url_entry.grid(row=1, column=0, sticky="ew", padx=(14, 8), pady=(0, 12), ipady=2)
-
-        # Windows-like shortcuts independent of EN/UA keyboard layout.
-        # Only Ctrl+A/C/X/V are intercepted; normal typing, Backspace, Delete,
-        # arrows, Home and End remain native.
+        self.url_entry.grid(row=0, column=0, sticky="ew", padx=(8, 2))
         self.url_entry.bind("<Control-KeyPress>", self._url_ctrl_keypress, add="+")
 
-        self.paste_btn = ctk.CTkButton(url_card, text="Paste", width=92, height=32, command=self.paste_url)
-        self.paste_btn.grid(row=1, column=1, padx=(0, 8), pady=(0, 12))
-
         self.clear_btn = ctk.CTkButton(
-            url_card, text="Clear", width=92, height=32,
-            fg_color=("gray75", "gray25"), hover_color=("gray65", "gray30"),
-            command=self.clear_url
+            input_shell, text="×", width=30, height=30, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT_SECONDARY,
+            font=ctk.CTkFont(size=18), command=self.clear_url
         )
-        self.clear_btn.grid(row=1, column=2, padx=(0, 14), pady=(0, 12))
+        self.clear_btn.grid(row=0, column=1, padx=(2, 0), pady=6)
+        self.clear_btn.grid_remove()
 
-        # Metadata
-        meta = self.card(root, 2)
+        self.paste_btn = ctk.CTkButton(
+            input_shell, text="Paste", width=66, height=30, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT_SECONDARY,
+            command=self.paste_url
+        )
+        self.paste_btn.grid(row=0, column=2, padx=(0, 6), pady=6)
+
+        # Compact video info surface.
+        meta = ctk.CTkFrame(root, fg_color=SURFACE, corner_radius=RADIUS)
+        meta.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         meta.grid_columnconfigure(1, weight=1)
 
         self.thumb_label = ctk.CTkLabel(
-            meta, text="Thumbnail", width=280, height=158,
-            corner_radius=8, fg_color=("gray85", "gray14"),
-            text_color=("gray45", "gray65")
+            meta, text="▶", width=200, height=112, corner_radius=RADIUS,
+            fg_color=SURFACE_2, text_color=TEXT_MUTED,
+            font=ctk.CTkFont(size=26, weight="bold")
         )
-        self.thumb_label.grid(row=0, column=0, rowspan=4, padx=14, pady=12, sticky="w")
+        self.thumb_label.grid(row=0, column=0, rowspan=4, padx=12, pady=12, sticky="w")
 
         self.title_label = ctk.CTkLabel(
-            meta, text="Paste a YouTube link. Video info will load automatically.",
-            font=ctk.CTkFont(size=17, weight="bold"),
-            anchor="w", justify="left", wraplength=530
+            meta, text="Paste a YouTube link", text_color=TEXT,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            anchor="w", justify="left", wraplength=560
         )
-        self.title_label.grid(row=0, column=1, sticky="ew", padx=(0, 14), pady=(14, 2))
+        self.title_label.grid(row=0, column=1, sticky="ew", padx=(0, 14), pady=(16, 2))
 
-        self.channel_label = ctk.CTkLabel(meta, text="Channel: —", text_color=("gray45", "gray65"), anchor="w")
+        self.channel_label = ctk.CTkLabel(
+            meta, text="Video information will load automatically",
+            text_color=TEXT_SECONDARY, anchor="w"
+        )
         self.channel_label.grid(row=1, column=1, sticky="ew", padx=(0, 14))
 
-        self.source_label = ctk.CTkLabel(meta, text="Source: —", text_color=("gray45", "gray65"), anchor="w")
+        self.source_label = ctk.CTkLabel(meta, text="", text_color=TEXT_SECONDARY, anchor="w")
         self.source_label.grid(row=2, column=1, sticky="ew", padx=(0, 14), pady=(1, 0))
 
-        self.fetch_status = ctk.CTkLabel(meta, text="", text_color=("gray45", "gray65"), anchor="w")
-        self.fetch_status.grid(row=3, column=1, sticky="ew", padx=(0, 14), pady=(5, 12))
+        self.fetch_status = ctk.CTkLabel(meta, text="Waiting for a link", text_color=TEXT_MUTED, anchor="w")
+        self.fetch_status.grid(row=3, column=1, sticky="ew", padx=(0, 14), pady=(5, 14))
 
-        # Options
-        options = self.card(root, 3)
+        # Settings surface.
+        options = ctk.CTkFrame(root, fg_color=SURFACE, corner_radius=RADIUS)
+        options.grid(row=3, column=0, sticky="ew", pady=(0, 12))
         options.grid_columnconfigure(0, weight=1)
 
-        top = ctk.CTkFrame(options, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", padx=14, pady=(11, 7))
-        top.grid_columnconfigure(2, weight=1)
+        tabs = ctk.CTkFrame(options, fg_color="transparent")
+        tabs.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 8))
+        tabs.grid_columnconfigure(2, weight=1)
 
-        self.mode_switch = ctk.CTkSegmentedButton(
-            top, values=["Video", "Audio"], variable=self.mode_var,
-            command=lambda _: self.apply_mode(), width=150
+        self.video_tab_btn = ctk.CTkButton(
+            tabs, text="Video", width=64, height=28, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT,
+            command=lambda: self.set_mode("Video")
         )
-        self.mode_switch.grid(row=0, column=0, sticky="w")
+        self.video_tab_btn.grid(row=0, column=0, sticky="w")
+        self.audio_tab_btn = ctk.CTkButton(
+            tabs, text="Audio", width=64, height=28, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT_SECONDARY,
+            command=lambda: self.set_mode("Audio")
+        )
+        self.audio_tab_btn.grid(row=0, column=1, sticky="w", padx=(4, 0))
 
-        self.mode_help = ctk.CTkLabel(
-            top, text="", text_color=("gray45", "gray65")
-        )
+        self.mode_help = ctk.CTkLabel(tabs, text="", text_color=TEXT_MUTED)
         self.mode_help.grid(row=0, column=2, sticky="e")
 
         self.video_frame = ctk.CTkFrame(options, fg_color="transparent")
-        self.video_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 7))
-        self.video_frame.grid_columnconfigure(5, weight=1)
+        self.video_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 8))
+        self.video_frame.grid_columnconfigure(6, weight=1)
 
-        ctk.CTkLabel(self.video_frame, text="Quality").grid(row=0, column=0, sticky="w")
-        self.video_quality = ctk.CTkOptionMenu(
-            self.video_frame, values=VIDEO_QUALITIES,
-            variable=self.video_quality_var, width=110, height=30
+        ctk.CTkLabel(self.video_frame, text="Quality", text_color=TEXT_SECONDARY).grid(row=0, column=0, sticky="w")
+        self.video_quality = self.neutral_option_menu(
+            self.video_frame, VIDEO_QUALITIES, self.video_quality_var, 112
         )
-        self.video_quality.grid(row=0, column=1, padx=(8, 18))
+        self.video_quality.grid(row=0, column=1, padx=(8, 20))
 
-        ctk.CTkLabel(self.video_frame, text="Container").grid(row=0, column=2)
-        self.video_container = ctk.CTkOptionMenu(
-            self.video_frame, values=["mp4", "mkv"],
-            variable=self.video_container_var, width=90, height=30
+        ctk.CTkLabel(self.video_frame, text="Container", text_color=TEXT_SECONDARY).grid(row=0, column=2, sticky="w")
+        self.video_container = self.neutral_option_menu(
+            self.video_frame, ["mp4", "mkv"], self.video_container_var, 92
         )
-        self.video_container.grid(row=0, column=3, padx=(8, 18))
+        self.video_container.grid(row=0, column=3, padx=(8, 20))
 
-        self.capcut_switch = ctk.CTkSwitch(
-            self.video_frame, text="CapCut compatible",
-            variable=self.capcut_var
+        self.capcut_switch = ctk.CTkCheckBox(
+            self.video_frame, text="Editor ready", variable=self.capcut_var,
+            width=120, checkbox_width=19, checkbox_height=19, corner_radius=5,
+            fg_color=ACCENT, hover_color=ACCENT_HOVER, border_color=TEXT_MUTED,
+            text_color=TEXT
         )
         self.capcut_switch.grid(row=0, column=4, sticky="w")
+        self.editor_ready_tooltip = ToolTip(
+            self.capcut_switch,
+            "Editor ready forces an MP4 output compatible with common editors\n"
+            "using H.264 video and AAC audio when available."
+        )
 
         self.audio_frame = ctk.CTkFrame(options, fg_color="transparent")
         self.audio_frame.grid_columnconfigure(4, weight=1)
-        ctk.CTkLabel(self.audio_frame, text="Format").grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(self.audio_frame, text="MP3", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=(8, 20))
-        ctk.CTkLabel(self.audio_frame, text="Quality").grid(row=0, column=2)
-        self.audio_quality = ctk.CTkOptionMenu(
-            self.audio_frame, values=AUDIO_QUALITIES,
-            variable=self.audio_quality_var, width=120, height=30
+        ctk.CTkLabel(self.audio_frame, text="Format", text_color=TEXT_SECONDARY).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(self.audio_frame, text="MP3", text_color=TEXT, font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=(8, 22))
+        ctk.CTkLabel(self.audio_frame, text="Quality", text_color=TEXT_SECONDARY).grid(row=0, column=2, sticky="w")
+        self.audio_quality = self.neutral_option_menu(
+            self.audio_frame, AUDIO_QUALITIES, self.audio_quality_var, 124
         )
         self.audio_quality.grid(row=0, column=3, padx=(8, 0))
 
         folder = ctk.CTkFrame(options, fg_color="transparent")
-        folder.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
+        folder.grid(row=2, column=0, sticky="ew", padx=14, pady=(2, 13))
         folder.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(folder, text="Save to").grid(row=0, column=0, sticky="w")
-        self.folder_entry = ctk.CTkEntry(folder, textvariable=self.output_var, height=30)
-        self.folder_entry.grid(row=0, column=1, sticky="ew", padx=(10, 8))
+        ctk.CTkLabel(folder, text="Save to", text_color=TEXT_SECONDARY).grid(row=0, column=0, sticky="w")
+        folder_shell = ctk.CTkFrame(folder, fg_color=SURFACE_2, corner_radius=RADIUS, height=36)
+        folder_shell.grid(row=0, column=1, sticky="ew", padx=(10, 8))
+        folder_shell.grid_columnconfigure(0, weight=1)
+        self.folder_name_label = ctk.CTkLabel(
+            folder_shell, textvariable=self.folder_name_var, text_color=TEXT, anchor="w"
+        )
+        self.folder_name_label.grid(row=0, column=0, sticky="ew", padx=10, pady=7)
 
-        ctk.CTkButton(folder, text="Browse", width=82, height=30, command=self.choose_folder).grid(row=0, column=2, padx=(0, 8))
         ctk.CTkButton(
-            folder, text="Open", width=82, height=30,
-            fg_color=("gray75", "gray25"), hover_color=("gray65", "gray30"),
+            folder, text="Change", width=70, height=30, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT_SECONDARY,
+            command=self.choose_folder
+        ).grid(row=0, column=2, padx=(0, 4))
+        ctk.CTkButton(
+            folder, text="Open", width=54, height=30, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT_SECONDARY,
             command=self.open_folder
         ).grid(row=0, column=3)
 
-
-        # Download card
-        dl = self.card(root, 4)
+        # Compact download surface. State and percentage live in the primary CTA.
+        dl = ctk.CTkFrame(root, fg_color="transparent", corner_radius=0)
         self.download_card = dl
+        dl.grid(row=4, column=0, sticky="ew", pady=(2, 0))
         dl.grid_columnconfigure(0, weight=1)
 
+        # Keep these widgets for state compatibility, but remove their old visual row.
         status_row = ctk.CTkFrame(dl, fg_color="transparent")
-        status_row.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 7))
-        status_row.grid_columnconfigure(1, weight=1)
+        self.status_label = ctk.CTkLabel(status_row, text="Waiting")
+        self.percent_label = ctk.CTkLabel(status_row, text="")
 
-        self.activity_icon = ctk.CTkLabel(
-            status_row, text="↓", width=34, height=34,
-            corner_radius=10, fg_color=("gray80", "gray22"),
-            font=ctk.CTkFont(size=20, weight="bold")
-        )
-        self.activity_icon.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
-
-        self.status_label = ctk.CTkLabel(
-            status_row, text="Waiting",
-            font=ctk.CTkFont(size=15, weight="bold"), anchor="w"
-        )
-        self.status_label.grid(row=0, column=1, sticky="w")
-
-        self.download_detail = ctk.CTkLabel(
-            status_row, text="Paste a YouTube link to begin",
-            text_color=("gray45", "gray65"), anchor="w"
-        )
-        self.download_detail.grid(row=1, column=1, sticky="w")
-
-        self.percent_label = ctk.CTkLabel(
-            status_row, text="0%",
-            font=ctk.CTkFont(size=24, weight="bold")
-        )
-        self.percent_label.grid(row=0, column=2, rowspan=2, sticky="e")
-
-        self.progress = ctk.CTkProgressBar(dl, height=12, corner_radius=6)
-        self.progress.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 11))
+        # Keep the progress object as internal state; it is no longer rendered separately.
+        self.progress = ctk.CTkProgressBar(dl)
         self.progress.set(0)
 
         action = ctk.CTkFrame(dl, fg_color="transparent")
-        action.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
+        action.grid(row=0, column=0, sticky="ew")
         action.grid_columnconfigure(0, weight=1)
 
         self.download_btn = ctk.CTkButton(
-            action, text="Download", height=38,
+            action, text="Download", height=46, corner_radius=RADIUS,
             font=ctk.CTkFont(size=14, weight="bold"),
-            command=self.start_download
+            fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#FFFFFF",
+            command=self.start_download, state="disabled"
         )
         self.download_btn.grid(row=0, column=0, sticky="ew")
 
         self.cancel_btn = ctk.CTkButton(
-            action, text="Cancel", width=100, height=38,
-            fg_color=("gray75", "gray25"), hover_color=("gray65", "gray30"),
+            action, text="Cancel", width=86, height=46, corner_radius=RADIUS,
+            fg_color=SURFACE_2, hover_color=HOVER, text_color=TEXT_SECONDARY,
             command=self.cancel_download, state="disabled"
         )
         self.cancel_btn.grid(row=0, column=1, padx=(8, 0))
+        self.cancel_btn.grid_remove()
 
-        # Bottom controls always visible
+        self.download_detail = ctk.CTkLabel(
+            dl, text="Paste a YouTube link to begin",
+            text_color=TEXT_MUTED, anchor="center",
+            font=ctk.CTkFont(size=11)
+        )
+        self.download_detail.grid(row=1, column=0, sticky="ew", padx=6, pady=(6, 0))
+
         bottom = ctk.CTkFrame(root, fg_color="transparent")
-        bottom.grid(row=5, column=0, sticky="ew", pady=(8, 0))
+        bottom.grid(row=5, column=0, sticky="ew", pady=(9, 0))
         bottom.grid_columnconfigure(1, weight=1)
 
         self.details_btn = ctk.CTkButton(
-            bottom, text="Show details", width=130, height=30,
-            fg_color="transparent", border_width=1,
+            bottom, text="Details", width=74, height=30, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT_SECONDARY,
             command=self.toggle_details
         )
         self.details_btn.grid(row=0, column=0, sticky="w")
 
-        self.done_text = ctk.CTkLabel(bottom, text="", text_color=("gray45", "gray65"))
+        self.done_text = ctk.CTkLabel(bottom, text="", text_color=TEXT_MUTED)
         self.done_text.grid(row=0, column=1)
+        self.done_text.grid_remove()
 
         self.open_file_btn = ctk.CTkButton(
-            bottom, text="Open file", width=110, height=30,
-            command=self.open_last_file
+            bottom, text="Show in folder", width=108, height=30, corner_radius=RADIUS,
+            fg_color=SURFACE_2, hover_color=HOVER, text_color=TEXT_SECONDARY,
+            command=self.show_last_file_in_folder
         )
         self.open_file_btn.grid(row=0, column=2, padx=(8, 0))
         self.open_file_btn.grid_remove()
 
-        self.history_btn = ctk.CTkButton(
-            bottom, text="History", width=90, height=30,
-            fg_color="transparent", border_width=1,
-            command=self.show_history
-        )
-        self.history_btn.grid(row=0, column=3, padx=(8, 0))
-
-        # Details overlay-like block; hidden by default
-        self.details_frame = ctk.CTkFrame(root, corner_radius=10)
+        self.details_frame = ctk.CTkFrame(root, corner_radius=RADIUS, fg_color=SURFACE)
         self.details_frame.grid(row=6, column=0, sticky="nsew", pady=(8, 0))
-        self.log = ctk.CTkTextbox(self.details_frame, height=120, font=("Consolas", 11))
+        self.log = ctk.CTkTextbox(
+            self.details_frame, height=120, font=("Consolas", 11),
+            fg_color=SURFACE_2, text_color=TEXT
+        )
         self.log.pack(fill="both", expand=True, padx=8, pady=8)
         self.details_frame.grid_remove()
 
-    def card(self, root, row):
-        f = ctk.CTkFrame(root, corner_radius=10)
-        f.grid(row=row, column=0, sticky="ew", pady=(0, 8))
-        return f
+    def neutral_option_menu(self, parent, values, variable, width):
+        return ctk.CTkOptionMenu(
+            parent, values=values, variable=variable, width=width, height=32,
+            corner_radius=RADIUS, fg_color=SURFACE_2, button_color=SURFACE_2,
+            button_hover_color=HOVER, dropdown_fg_color=SURFACE_2,
+            dropdown_hover_color=HOVER, text_color=TEXT
+        )
+
+    def set_mode(self, mode):
+        self.mode_var.set(mode)
+        self.apply_mode()
+
+    def show_more_menu(self):
+        # Header utilities are independent from download state.
+        # Always clean up a stale menu reference before creating a new one.
+        if self.more_menu is not None:
+            try:
+                if self.more_menu.winfo_exists():
+                    self.more_menu.destroy()
+                    self.more_menu = None
+                    return
+            except Exception:
+                pass
+            self.more_menu = None
+
+        menu = ctk.CTkToplevel(self)
+        self.more_menu = menu
+        menu.overrideredirect(True)
+        menu.configure(fg_color=SURFACE)
+        menu.attributes("-topmost", True)
+        menu.geometry("176x116")
+
+        self.update_idletasks()
+        x = self.more_btn.winfo_rootx() + self.more_btn.winfo_width() - 176
+        y = self.more_btn.winfo_rooty() + self.more_btn.winfo_height() + 5
+        menu.geometry(f"176x116+{x}+{y}")
+
+        def add_item(text, command):
+            def run():
+                try:
+                    if menu.winfo_exists():
+                        menu.destroy()
+                except Exception:
+                    pass
+                self.more_menu = None
+                command()
+            ctk.CTkButton(
+                menu, text=text, anchor="w", height=34, corner_radius=6,
+                fg_color="transparent", hover_color=HOVER, text_color=TEXT,
+                command=run
+            ).pack(fill="x", padx=6, pady=(6 if not menu.winfo_children() else 0, 0))
+
+        add_item("About Pullio", self.show_about)
+        add_item("Update yt-dlp", self.confirm_update_ytdlp)
+        add_item("History", self.show_history)
+
+        # Do not use FocusOut to destroy the popup: focus transitions between
+        # CTk child widgets can generate FocusOut and leave stale state.
+        menu.bind("<Escape>", lambda _e: self._close_more_menu())
+        menu.focus_force()
+
+    def _close_more_menu(self):
+        menu = self.more_menu
+        self.more_menu = None
+        if menu is not None:
+            try:
+                if menu.winfo_exists():
+                    menu.destroy()
+            except Exception:
+                pass
 
     def on_url_changed(self, *_):
         if self.auto_fetch_job:
@@ -422,12 +562,59 @@ class DownloaderApp(ctk.CTk):
             self.auto_fetch_job = None
 
         value = self.url_var.get().strip()
+        if value:
+            self.clear_btn.grid()
+        else:
+            self.clear_btn.grid_remove()
+
         if not value:
             self.reset_metadata()
             return
 
+        self.metadata = {}
+        self.download_btn.configure(state="disabled", text="Download")
+        self.status_label.configure(text="Checking link…")
+        self.download_detail.configure(text="Loading video information")
+
         if looks_like_youtube_url(value):
+            if has_playlist_param(value):
+                self.set_fetch_status("Playlist link detected • this video only")
             self.auto_fetch_job = self.after(650, self.fetch_metadata)
+        else:
+            self.set_fetch_status("Paste a valid YouTube URL")
+            self.status_label.configure(text="Waiting")
+            self.download_detail.configure(text="Paste a valid YouTube link")
+
+    def check_clipboard_on_start(self):
+        """Use a valid YouTube URL from the clipboard when Pullio opens."""
+        if self.url_var.get().strip():
+            return
+        text = self._clipboard_text().strip()
+        if looks_like_youtube_url(text):
+            self.last_clipboard_url = text
+            self.url_var.set(text)
+            self.url_entry.icursor("end")
+            self.set_fetch_status("YouTube link detected from clipboard")
+
+    def _on_app_focus(self, _event=None):
+        """Pick up a newly copied YouTube URL when the user returns to Pullio."""
+        if self.worker and self.worker.is_alive():
+            return
+        if self.duplicate_modal and self.duplicate_modal.winfo_exists():
+            return
+
+        text = self._clipboard_text().strip()
+        if not looks_like_youtube_url(text):
+            return
+
+        current = self.url_var.get().strip()
+        if text == current or text == self.last_clipboard_url:
+            return
+
+        self.last_clipboard_url = text
+        self.url_var.set(text)
+        self.url_entry.icursor("end")
+        self.set_fetch_status("YouTube link detected from clipboard")
 
     def _clipboard_text(self):
         try:
@@ -480,16 +667,22 @@ class DownloaderApp(ctk.CTk):
             self.fetch_generation += 1
             self.metadata = {}
             self.thumbnail_img = None
-            self.thumb_label.configure(image="", text="Thumbnail")
+            self.thumb_label.configure(image="", text="▶")
             self.title_label.configure(text="Loading video info…")
-            self.channel_label.configure(text="Channel: —")
-            self.source_label.configure(text="Source: —")
+            self.channel_label.configure(text="Checking the link")
+            self.source_label.configure(text="")
             self.fetch_status.configure(text="Loading video info…")
 
             self.url_var.set(text)
             entry.icursor("end")
 
-            # Start one clean metadata request for this exact URL.
+            # url_var.set() triggers on_url_changed(), which schedules the normal
+            # debounce fetch. Replace it with one fast fetch for an explicit paste.
+            if self.auto_fetch_job:
+                try:
+                    self.after_cancel(self.auto_fetch_job)
+                except Exception:
+                    pass
             self.auto_fetch_job = self.after(150, self.fetch_metadata)
             return
 
@@ -547,17 +740,6 @@ class DownloaderApp(ctk.CTk):
 
         return None
 
-    def open_support(self):
-        if SUPPORT_URL:
-            webbrowser.open(SUPPORT_URL)
-        else:
-            messagebox.showinfo(
-                APP_NAME,
-                "Support link is not configured yet.\\n\\n"
-                "Before publishing, set SUPPORT_URL in app_v5.py "
-                "to your GitHub Sponsors or Ko-fi page."
-            )
-
     def show_about(self):
         text = (
             f"Pullio {APP_VERSION}\n\n"
@@ -565,7 +747,7 @@ class DownloaderApp(ctk.CTk):
             "Features:\n"
             "• Video downloads up to the best available quality\n"
             "• MP3 audio extraction\n"
-            "• CapCut-compatible MP4 mode\n"
+            "• Editor-ready H.264/MP4 mode\n"
             "• Download history\n"
             "• Local yt-dlp updater\n\n"
             "Pullio does not grant rights to download or reuse copyrighted content. "
@@ -583,42 +765,87 @@ class DownloaderApp(ctk.CTk):
         self.url_var.set("")
         self.url_entry.focus_set()
 
+    def _recreate_thumbnail_label_if_needed(self):
+        """Rebuild the thumbnail label if its underlying Tk image handle went stale."""
+        try:
+            # A harmless text-only configure will fail if CTk tries to reuse a dead pyimage.
+            self.thumb_label.configure(text=self.thumb_label.cget("text"))
+            return
+        except Exception:
+            pass
+
+        try:
+            old = self.thumb_label
+            parent = old.master
+            old.grid_forget()
+            old.destroy()
+
+            self.thumb_label = ctk.CTkLabel(
+                parent, text="▶", width=200, height=112, corner_radius=RADIUS,
+                fg_color=SURFACE_2, text_color=TEXT_MUTED,
+                font=ctk.CTkFont(size=26, weight="bold")
+            )
+            self.thumb_label.grid(row=0, column=0, rowspan=4, padx=12, pady=12, sticky="w")
+        except Exception:
+            pass
+
     def reset_metadata(self):
+        self._recreate_thumbnail_label_if_needed()
+        # Safe thumbnail reset: never touch the Tk image option here.
+        # CustomTkinter can retain a stale Tcl "pyimage" handle after a previous
+        # CTkImage is destroyed. Reconfiguring image=None/image="" can then crash.
+        self.thumbnail_img = None
+        try:
+            self.thumb_label.configure(text="▶")
+        except Exception:
+            pass
+        self.thumb_image = None
         self.fetch_generation += 1
         self.metadata = {}
-        self.thumbnail_img = None
-        self.thumb_label.configure(image=None, text="Thumbnail")
-        self.title_label.configure(text="Paste a YouTube link. Video info will load automatically.")
-        self.channel_label.configure(text="Channel: —")
-        self.source_label.configure(text="Source: —")
-        self.fetch_status.configure(text="")
+        self.title_label.configure(text="Paste a YouTube link")
+        self.channel_label.configure(text="Video information will load automatically")
+        self.source_label.configure(text="")
+        self.fetch_status.configure(text="Waiting for a link")
         self.done_text.configure(text="")
         self.open_file_btn.grid_remove()
+        self.cancel_btn.grid_remove()
         self.progress.set(0)
-        self.percent_label.configure(text="0%")
+        self.percent_label.configure(text="")
         self.status_label.configure(text="Waiting")
         self.download_detail.configure(text="Paste a YouTube link to begin")
-        self.activity_icon.configure(text="↓", fg_color=("gray80", "gray22"))
-        self.download_card.configure(border_width=0)
-        self.download_btn.configure(text="Download", state="normal")
+        self.download_btn.configure(text="Download", state="disabled")
+
+    def start_new_download(self):
+        """Reset Pullio to a clean one-job state and immediately check clipboard."""
+        self.last_file = None
+        self.url_var.set("")
+        self.reset_metadata()
+        self.url_entry.focus_set()
+        self.after(80, self._on_app_focus)
 
     def set_fetch_status(self, text):
         self.fetch_status.configure(text=text)
 
     def apply_mode(self):
-        if self.mode_var.get() == "Audio":
+        is_audio = self.mode_var.get() == "Audio"
+        if is_audio:
             self.video_frame.grid_remove()
-            self.audio_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 7))
+            self.audio_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 8))
             self.mode_help.configure(text="MP3 • Best = highest available source quality")
+            self.video_tab_btn.configure(text_color=TEXT_SECONDARY, fg_color="transparent")
+            self.audio_tab_btn.configure(text_color=TEXT, fg_color=SURFACE_2)
         else:
             self.audio_frame.grid_remove()
-            self.video_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 7))
-            self.mode_help.configure(text="MAX = best available • CapCut = H.264/MP4")
+            self.video_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 8))
+            self.mode_help.configure(text="")
+            self.video_tab_btn.configure(text_color=TEXT, fg_color=SURFACE_2)
+            self.audio_tab_btn.configure(text_color=TEXT_SECONDARY, fg_color="transparent")
 
     def choose_folder(self):
         p = filedialog.askdirectory(initialdir=self.output_var.get() or str(DEFAULT_DOWNLOADS))
         if p:
             self.output_var.set(p)
+            self.folder_name_var.set(Path(p).name or p)
             self.save_settings()
 
     def open_folder(self):
@@ -629,6 +856,15 @@ class DownloaderApp(ctk.CTk):
     def open_last_file(self):
         if self.last_file and Path(self.last_file).exists():
             os.startfile(str(self.last_file))
+
+    def show_last_file_in_folder(self):
+        if self.last_file and Path(self.last_file).exists():
+            try:
+                subprocess.Popen(["explorer.exe", "/select,", str(Path(self.last_file))])
+            except Exception:
+                os.startfile(str(Path(self.last_file).parent))
+        else:
+            self.open_folder()
 
     def fit_window_to_screen(self):
         """Keep the whole app visible without requiring manual resizing."""
@@ -653,7 +889,7 @@ class DownloaderApp(ctk.CTk):
             self.geometry("920x820")
         else:
             self.details_frame.grid_remove()
-            self.details_btn.configure(text="Show details")
+            self.details_btn.configure(text="Details")
             self.geometry("920x690")
         self.after_idle(self.fit_window_to_screen)
 
@@ -724,14 +960,14 @@ class DownloaderApp(ctk.CTk):
                 raw = r.read()
 
             img = Image.open(BytesIO(raw)).convert("RGB")
-            tw, th = 280, 158
+            tw, th = 200, 112
             ratio = max(tw / img.width, th / img.height)
             img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
             left = max(0, (img.width - tw) // 2)
             top = max(0, (img.height - th) // 2)
             img = img.crop((left, top, left + tw, top + th))
 
-            image = ctk.CTkImage(light_image=img, dark_image=img, size=(280, 158))
+            image = ctk.CTkImage(light_image=img, dark_image=img, size=(200, 112))
             self.msg_queue.put(("thumbnail", (generation, image)))
         except Exception as e:
             self.msg_queue.put(("thumbnail_error", (generation, str(e))))
@@ -774,6 +1010,183 @@ class DownloaderApp(ctk.CTk):
 
         return None
 
+    def _destroy_duplicate_modal(self):
+        modal = self.duplicate_modal
+        backdrop = self.modal_backdrop
+        self.duplicate_modal = None
+        self.modal_backdrop = None
+
+        if modal is not None:
+            try:
+                modal.grab_release()
+            except Exception:
+                pass
+            try:
+                if modal.winfo_exists():
+                    modal.destroy()
+            except Exception:
+                pass
+
+        if backdrop is not None:
+            try:
+                if backdrop.winfo_exists():
+                    backdrop.destroy()
+            except Exception:
+                pass
+
+        try:
+            self.attributes("-disabled", False)
+        except Exception:
+            pass
+        try:
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+
+    def _show_duplicate_modal(self, existing):
+        """Centered Pullio duplicate dialog with a dimmed, blocked backdrop."""
+        try:
+            if self.duplicate_modal is not None and self.duplicate_modal.winfo_exists():
+                self.duplicate_modal.lift()
+                self.duplicate_modal.focus_force()
+                return
+        except Exception:
+            self.duplicate_modal = None
+
+        self._close_more_menu()
+        self.update_idletasks()
+
+        # Dim the complete app, including the bright Download CTA.
+        # Tk/CustomTkinter cannot apply CSS backdrop-filter blur, so a separate
+        # translucent top-level gives the correct visual hierarchy without
+        # introducing a second GUI framework.
+        backdrop = ctk.CTkToplevel(self)
+        self.modal_backdrop = backdrop
+        backdrop.overrideredirect(True)
+        backdrop.configure(fg_color="#000000")
+        backdrop.attributes("-alpha", 0.62)
+        backdrop.attributes("-topmost", True)
+
+        app_x = self.winfo_rootx()
+        app_y = self.winfo_rooty()
+        app_w = self.winfo_width()
+        app_h = self.winfo_height()
+        backdrop.geometry(f"{app_w}x{app_h}+{app_x}+{app_y}")
+        backdrop.lift()
+
+        modal_w, modal_h = 500, 258
+        modal = ctk.CTkToplevel(self)
+        self.duplicate_modal = modal
+        modal.title("")
+        modal.overrideredirect(True)
+        modal.resizable(False, False)
+        modal.configure(fg_color=BG)
+        modal.transient(self)
+        modal.attributes("-topmost", True)
+
+        # Exact center of the Pullio client window.
+        x = app_x + max(0, (app_w - modal_w) // 2)
+        y = app_y + max(0, (app_h - modal_h) // 2)
+        modal.geometry(f"{modal_w}x{modal_h}+{x}+{y}")
+
+        card = ctk.CTkFrame(
+            modal, fg_color=SURFACE, corner_radius=12,
+            border_width=1, border_color="#2E2E34"
+        )
+        card.pack(fill="both", expand=True, padx=1, pady=1)
+
+        ctk.CTkLabel(
+            card, text="Already downloaded",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=TEXT, anchor="w"
+        ).pack(fill="x", padx=24, pady=(23, 8))
+
+        ctk.CTkLabel(
+            card,
+            text="This video already exists in the selected folder.",
+            text_color=TEXT_SECONDARY, anchor="w"
+        ).pack(fill="x", padx=24)
+
+        ctk.CTkLabel(
+            card, text=existing.name,
+            text_color=TEXT, anchor="w",
+            wraplength=450, justify="left"
+        ).pack(fill="x", padx=24, pady=(12, 20))
+
+        actions = ctk.CTkFrame(card, fg_color="transparent")
+        actions.pack(fill="x", padx=24, pady=(0, 22))
+        actions.grid_columnconfigure(0, weight=1)
+
+        def cancel():
+            self._destroy_duplicate_modal()
+
+        def replace():
+            self._destroy_duplicate_modal()
+            self._begin_download(force_rename=False, replace_path=existing)
+
+        def keep_both():
+            self._destroy_duplicate_modal()
+            self._begin_download(force_rename=True)
+
+        cancel_btn = ctk.CTkButton(
+            actions, text="Cancel", width=88, height=36, corner_radius=RADIUS,
+            fg_color="transparent", hover_color=HOVER, text_color=TEXT_SECONDARY,
+            command=cancel
+        )
+        cancel_btn.grid(row=0, column=1, padx=(0, 8))
+
+        replace_btn = ctk.CTkButton(
+            actions, text="Replace", width=96, height=36, corner_radius=RADIUS,
+            fg_color=SURFACE_2, hover_color=HOVER, text_color=TEXT,
+            command=replace
+        )
+        replace_btn.grid(row=0, column=2, padx=(0, 8))
+
+        keep_btn = ctk.CTkButton(
+            actions, text="Keep both", width=116, height=36, corner_radius=RADIUS,
+            fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#FFFFFF",
+            command=keep_both
+        )
+        keep_btn.grid(row=0, column=3)
+
+        modal_actions = [cancel_btn, replace_btn, keep_btn]
+        focus_index = {"value": 2}
+
+        def focus_action(index):
+            focus_index["value"] = index % len(modal_actions)
+            modal_actions[focus_index["value"]].focus_set()
+
+        def cycle_action(event):
+            step = -1 if (event.state & 0x0001) else 1
+            focus_action(focus_index["value"] + step)
+            return "break"
+
+        def activate_action(_event=None):
+            idx = focus_index["value"]
+            if idx == 0:
+                cancel()
+            elif idx == 1:
+                replace()
+            else:
+                keep_both()
+            return "break"
+
+        for idx, btn in enumerate(modal_actions):
+            btn.bind("<FocusIn>", lambda _e, i=idx: focus_index.__setitem__("value", i), add="+")
+            btn.bind("<Tab>", cycle_action, add="+")
+            btn.bind("<Return>", activate_action, add="+")
+            btn.bind("<KP_Enter>", activate_action, add="+")
+
+        modal.bind("<Escape>", lambda _e: cancel())
+        modal.bind("<Tab>", cycle_action)
+        modal.bind("<Return>", activate_action)
+        modal.bind("<KP_Enter>", activate_action)
+        modal.protocol("WM_DELETE_WINDOW", cancel)
+        modal.lift()
+        modal.grab_set()
+        self.after(40, lambda: focus_action(2))
+
     def _next_duplicate_number(self, outdir):
         """Find the first free Windows-style suffix: (1), (2), (3), ..."""
         title = self.metadata.get("title")
@@ -784,37 +1197,6 @@ class DownloaderApp(ctk.CTk):
         while True:
             expected_stem = f"{title} ({n})"
             if not any(p.is_file() and p.stem == expected_stem for p in outdir.glob("*")):
-                return n
-            n += 1
-
-    def _confirm_duplicate_download(self):
-        existing = self._find_existing_target()
-        if not existing:
-            return False  # normal filename
-
-        # Keep the UI simple: warn once. If the user continues, download again
-        # automatically under a unique filename.
-        continue_download = messagebox.askyesno(
-            APP_NAME,
-            "This video appears to be already downloaded.\n\n"
-            f"{existing.name}\n\n"
-            "Download it again?\n\n"
-            "If you continue, the new file will be saved with a different name."
-        )
-        if not continue_download:
-            return None  # stop
-        return True  # force unique filename
-
-    def _next_duplicate_number(self, outdir):
-        """Find the first free duplicate suffix: (1), (2), (3), ..."""
-        video_id = self.metadata.get("id")
-        if not video_id:
-            return 1
-
-        n = 1
-        while True:
-            marker = f"[{video_id}] ({n})"
-            if not any(marker in p.name for p in outdir.glob("*") if p.is_file()):
                 return n
             n += 1
 
@@ -861,6 +1243,11 @@ class DownloaderApp(ctk.CTk):
         return cmd, outdir, before
 
     def start_download(self):
+        # When completion CTA says "Download another", it starts a truly clean job.
+        if self.download_btn.cget("text") == "Download another":
+            self.start_new_download()
+            return
+
         url = self.url_var.get().strip()
         if not looks_like_youtube_url(url):
             self.set_fetch_status("Paste a valid YouTube URL")
@@ -870,24 +1257,38 @@ class DownloaderApp(ctk.CTk):
         if self.worker and self.worker.is_alive():
             return
 
-        duplicate_result = self._confirm_duplicate_download()
-        if duplicate_result is None:
+        existing = self._find_existing_target()
+        if existing:
+            self._show_duplicate_modal(existing)
             return
 
-        force_rename = duplicate_result is True
+        self._begin_download(force_rename=False)
 
+    def _begin_download(self, force_rename=False, replace_path=None):
         self.save_settings()
+
+        if replace_path is not None:
+            try:
+                replace_path = Path(replace_path)
+                if replace_path.exists() and replace_path.is_file():
+                    replace_path.unlink()
+                    self.append_log(f"Replacing existing file: {replace_path.name}")
+            except Exception as e:
+                self.status_label.configure(text="Could not replace file")
+                self.download_detail.configure(text=str(e))
+                self.download_btn.configure(text="Try again", state="normal")
+                return
         self.last_file = None
         self.done_text.configure(text="")
+        self.done_text.grid_remove()
         self.open_file_btn.grid_remove()
         self.progress.set(0)
-        self.percent_label.configure(text="0%")
+        self.percent_label.configure(text="")
         self.status_label.configure(text="Preparing…")
         self.download_detail.configure(text="Checking formats and starting download")
-        self.activity_icon.configure(text="↓", fg_color=("#3b82f6", "#2563eb"))
-        self.download_card.configure(border_width=1, border_color=("#60a5fa", "#3b82f6"))
-        self.download_btn.configure(text="Downloading…", state="disabled")
+        self.download_btn.configure(text="Preparing…", state="disabled")
         self.cancel_btn.configure(state="normal")
+        self.cancel_btn.grid()
 
         cmd, outdir, before = self.build_download_cmd(force_rename=force_rename)
         self.append_log("Starting download…")
@@ -929,7 +1330,7 @@ class DownloaderApp(ctk.CTk):
                 elif "[Merger]" in line or "Merging formats" in line:
                     self.msg_queue.put(("status", "Merging video and audio…"))
                 elif "[VideoConvertor]" in line or "[VideoRemuxer]" in line:
-                    self.msg_queue.put(("status", "Preparing MP4 for CapCut…"))
+                    self.msg_queue.put(("status", "Preparing editor-ready MP4…"))
                 elif "[ExtractAudio]" in line:
                     self.msg_queue.put(("status", "Creating MP3…"))
                 elif "[download]" in line:
@@ -964,6 +1365,9 @@ class DownloaderApp(ctk.CTk):
             messagebox.showerror(APP_NAME, str(e))
 
     def confirm_update_ytdlp(self):
+        if self.updating_ytdlp:
+            messagebox.showinfo(APP_NAME, "yt-dlp update is already running.")
+            return
         if not YTDLP.exists():
             messagebox.showerror(APP_NAME, "yt-dlp.exe was not found.")
             return
@@ -975,7 +1379,7 @@ class DownloaderApp(ctk.CTk):
         if not ok:
             return
 
-        self.update_btn.configure(state="disabled", text="Updating…")
+        self.updating_ytdlp = True
         threading.Thread(target=self._update_ytdlp_worker, daemon=True).start()
 
     def _update_ytdlp_worker(self):
@@ -1051,7 +1455,7 @@ class DownloaderApp(ctk.CTk):
             else:
                 mode_text = item.get("video_quality", "MAX")
                 if item.get("capcut"):
-                    mode_text += " • CapCut"
+                    mode_text += " • Editor ready"
 
             ctk.CTkLabel(
                 row, text=item.get("title", "Untitled"),
@@ -1112,6 +1516,7 @@ class DownloaderApp(ctk.CTk):
             pass
 
     def on_close(self):
+        self._destroy_duplicate_modal()
         self.save_settings()
         if self.proc and self.proc.poll() is None:
             if not messagebox.askyesno(APP_NAME, "A download is in progress. Close the app and stop it?"):
@@ -1137,17 +1542,24 @@ class DownloaderApp(ctk.CTk):
 
                     self.metadata = data
                     self.title_label.configure(text=data.get("title") or "Untitled")
-                    self.channel_label.configure(text="Channel: " + (data.get("channel") or data.get("uploader") or "—"))
+                    self.channel_label.configure(text=data.get("channel") or data.get("uploader") or "Unknown channel")
                     self.source_label.configure(
-                        text=f"Source: {fmt_res(data)} • {pick_codec_summary(data)} • {seconds_to_hms(data.get('duration'))}"
+                        text=f"{fmt_res(data)} • {pick_codec_summary(data)} • {seconds_to_hms(data.get('duration'))}"
                     )
-                    self.set_fetch_status("Video info loaded")
-                    self.status_label.configure(text="Ready to download")
-                    self.download_detail.configure(text="Press Download to start")
-                    self.percent_label.configure(text="0%")
+                    if has_playlist_param(self.url_var.get()):
+                        self.set_fetch_status("Playlist detected • Pullio will download this video only")
+                    else:
+                        self.set_fetch_status("")
+                    self.status_label.configure(text="Ready")
+                    actual_h = data.get("height")
+                    if actual_h:
+                        self.download_detail.configure(
+                            text=f"Source up to {actual_h}p • choose settings and download"
+                        )
+                    else:
+                        self.download_detail.configure(text="Choose your settings and download")
+                    self.percent_label.configure(text="")
                     self.progress.set(0)
-                    self.activity_icon.configure(text="↓", fg_color=("gray80", "gray22"))
-                    self.download_card.configure(border_width=0)
                     self.download_btn.configure(text="Download", state="normal")
 
                     thumb = None
@@ -1174,8 +1586,9 @@ class DownloaderApp(ctk.CTk):
                         self.set_fetch_status("Could not load video info")
                         self.status_label.configure(text="Cannot download yet")
                         self.download_detail.configure(text="Check the YouTube link and try again")
-                        self.percent_label.configure(text="0%")
+                        self.percent_label.configure(text="")
                         self.progress.set(0)
+                        self.download_btn.configure(state="disabled", text="Download")
                         self.append_log("Metadata error: " + err)
 
                 elif kind == "thumbnail":
@@ -1202,7 +1615,7 @@ class DownloaderApp(ctk.CTk):
                     if total and total.upper() not in ("NA", "N/A", "UNKNOWN"):
                         bits.append(total)
 
-                    self.percent_label.configure(text=f"{pct:.0f}%")
+                    self.percent_label.configure(text="")
                     self.download_detail.configure(text=" • ".join(bits) if bits else "Downloading file…")
                     self.status_label.configure(text="Downloading…")
                     self.download_btn.configure(text=f"Downloading {pct:.0f}%")
@@ -1212,7 +1625,7 @@ class DownloaderApp(ctk.CTk):
                     if "Merging" in payload:
                         self.download_detail.configure(text="Finalizing your video")
                         self.download_btn.configure(text="Merging…")
-                    elif "CapCut" in payload:
+                    elif "editor-ready" in payload.lower():
                         self.download_detail.configure(text="Converting for editing compatibility")
                         self.download_btn.configure(text="Converting…")
                     elif "MP3" in payload:
@@ -1224,44 +1637,42 @@ class DownloaderApp(ctk.CTk):
 
                 elif kind == "done":
                     self.progress.set(1)
-                    self.percent_label.configure(text="100%")
+                    self.percent_label.configure(text="")
                     self.status_label.configure(text="Download complete")
                     self.download_detail.configure(
                         text=Path(self.last_file).name if self.last_file else "File saved successfully"
                     )
-                    self.activity_icon.configure(text="✓", fg_color=("#22c55e", "#16a34a"))
-                    self.download_card.configure(border_width=1, border_color=("#4ade80", "#22c55e"))
                     self.download_btn.configure(text="Download another", state="normal")
                     self.cancel_btn.configure(state="disabled")
+                    self.cancel_btn.grid_remove()
                     self.save_history()
-                    self.done_text.configure(text="✓ Downloaded")
+                    self.done_text.configure(text="")
+                    self.done_text.grid_remove()
                     if self.last_file:
                         self.open_file_btn.grid()
 
                 elif kind == "failed":
                     self.status_label.configure(text=f"Error, code {payload}")
                     self.download_detail.configure(text="Open Details for more information")
-                    self.activity_icon.configure(text="!", fg_color=("#ef4444", "#dc2626"))
-                    self.download_card.configure(border_width=1, border_color=("#f87171", "#ef4444"))
                     self.download_btn.configure(text="Try again", state="normal")
                     self.cancel_btn.configure(state="disabled")
+                    self.cancel_btn.grid_remove()
                     if not self.details_open:
                         self.toggle_details()
 
                 elif kind == "error":
                     self.status_label.configure(text="Error")
                     self.download_detail.configure(text="Open Details for more information")
-                    self.activity_icon.configure(text="!", fg_color=("#ef4444", "#dc2626"))
-                    self.download_card.configure(border_width=1, border_color=("#f87171", "#ef4444"))
                     self.download_btn.configure(text="Try again", state="normal")
                     self.cancel_btn.configure(state="disabled")
+                    self.cancel_btn.grid_remove()
                     self.append_log("ERROR: " + payload)
                     if not self.details_open:
                         self.toggle_details()
 
                 elif kind == "update_result":
                     code, text = payload
-                    self.update_btn.configure(state="normal", text="Update yt-dlp")
+                    self.updating_ytdlp = False
                     self.append_log("yt-dlp update: " + text)
                     if code == 0:
                         messagebox.showinfo(APP_NAME, "yt-dlp update completed.")
