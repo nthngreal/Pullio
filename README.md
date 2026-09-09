@@ -10,11 +10,6 @@ A lightweight Windows app for downloading video and audio, powered by **yt-dlp**
 
 **Windows 10 / 11 · Video · MP3 · Editor-ready MP4**
 
-<br>
-
-## Demo
-
-![Pullio demo](assets/pullio-demo.gif)
 
 </div>
 
