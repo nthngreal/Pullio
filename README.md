@@ -8,7 +8,7 @@
 
 A lightweight Windows app for downloading video and audio, powered by **yt-dlp** and **FFmpeg**.
 
-**Windows 10 / 11 · Video · MP3 · CapCut-friendly MP4**
+**Windows 10 / 11 · Video · MP3 · Editor-ready MP4**
 
 <br>
 
@@ -30,13 +30,14 @@ Pullio is portable. **No installation or Python required.**
 
 ### 🚀 Getting started
 
-1. Download `Pullio-1.0.0-win64.zip`
+1. Download the latest `Pullio-*-win64.zip`
 2. Extract the ZIP file
-3. Open the extracted `Pullio-1.0.0-win64` folder
+3. Open the extracted Pullio folder
 4. Run **`Pullio.exe`**
 5. Paste a YouTube URL
 6. Choose **Video** or **Audio**
-7. Click **Download**
+7. Choose your settings
+8. Click **Download**
 
 > 💡 Everything needed to run Pullio is included in the release package.
 
@@ -49,14 +50,28 @@ Pullio is portable. **No installation or Python required.**
 | 🎬 Video quality | MAX, 4K, 1440p, 1080p, 720p |
 | 📦 Video formats | MP4, MKV |
 | 🎵 Audio | MP3 - Best, 320, 256, 192, 128 kbps |
-| ✂️ CapCut | CapCut-compatible MP4 mode |
+| ✂️ Editor ready | H.264 / AAC / MP4 mode for video editors |
 | 🖼️ Video info | Title, channel, source info and thumbnail |
-| 📊 Download status | Progress, speed and ETA |
-| 📁 Duplicate files | Automatic `(1)`, `(2)`, `(3)` naming |
+| 📊 Download status | Integrated download progress and status |
+| 📁 Duplicate files | Replace, Keep both or Cancel |
+| 📋 Clipboard | Smart YouTube URL detection |
+| ⌨️ Keyboard controls | Dialog navigation with keyboard support |
 | 🕘 History | Download history |
 | 🔄 yt-dlp | Built-in updater |
 | 🌙 Interface | Modern dark UI |
 | 💻 Windows | Portable release, no installation required |
+
+---
+
+## 🖥️ Interface
+
+### Ready to download
+
+![Pullio ready](assets/pullio-app.png)
+
+### Download complete
+
+![Pullio download complete](assets/pullio-complete.png)
 
 ---
 
@@ -68,21 +83,29 @@ Paste the link into the **YouTube URL** field.
 
 Pullio automatically loads the video's title, channel, thumbnail and source information.
 
+If the URL contains playlist information, Pullio clearly indicates that only the selected video will be downloaded.
+
 ### 2. Choose Video or Audio
 
 For **Video**, choose the desired quality and container.
+
+Enable **Editor ready** when you want an H.264 / AAC / MP4 file suitable for video editors.
 
 For **Audio**, choose the desired MP3 quality.
 
 ### 3. Choose where to save
 
-Use **Browse** to select your destination folder.
+Use **Change** to select your destination folder.
 
 ### 4. Download
 
 Click **Download**.
 
-Pullio will display the progress, download speed and estimated time remaining.
+Download progress and status are displayed directly in the main action area.
+
+If a file with the same name already exists, Pullio lets you **Replace** it, **Keep both**, or **Cancel**.
+
+After completion, you can reveal the downloaded file with **Show in folder** or immediately start another download.
 
 ---
 
@@ -122,10 +145,8 @@ install_dev.bat
 
 ### Run Pullio
 
-Run:
-
-```bat
-run_dev.bat
+```powershell
+python src\pullio.py
 ```
 
 ### Build the Windows release
@@ -139,7 +160,13 @@ build_release.bat
 The build script creates the portable Windows release in:
 
 ```text
-release/Pullio-1.0.0-win64/
+release/Pullio-1.2.2-win64/
+```
+
+and the distributable ZIP:
+
+```text
+release/Pullio-1.2.2-win64.zip
 ```
 
 </details>
@@ -150,7 +177,7 @@ release/Pullio-1.0.0-win64/
 
 Pullio is free to use.
 
-If you find Pullio useful, you can support its development through the **Support** button inside the app once the support page is configured.
+If you find Pullio useful, you can support its development through the **Support** option inside the app once the support page is configured.
 
 ---
 
@@ -183,6 +210,6 @@ See:
 
 Made with Python, CustomTkinter, yt-dlp and FFmpeg.
 
-**Pullio v1.0.0**
+**Pullio v1.2.2**
 
 </div>
